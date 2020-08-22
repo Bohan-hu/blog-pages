@@ -3,7 +3,7 @@ title: 使用Hexo搭建个人博客过程记录
 date: 2020/8/21 20:00:00
 tag: 
 	- 技术
-	- Hexo
+	- 环境配置
 category:
 	- 笔记
 ---
