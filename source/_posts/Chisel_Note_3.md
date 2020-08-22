@@ -224,3 +224,7 @@ sbt "testOnly SimpleSpec"
 ```
 
 来运行单个测试。
+
+测试图片
+
+![1568212684223.png](https://i.loli.net/2020/08/22/RFNM5zOHn2UZe9v.png)
