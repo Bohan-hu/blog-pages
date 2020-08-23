@@ -30,7 +30,7 @@ generated文件夹包含了生成的Verilog代码。
 
 以下是一个Package的实例：
 
-```
+```scala
 pacakge mypack
 import chisel3._
 
@@ -49,14 +49,14 @@ import mypack._
 
 也可以导入一部分类，此时需要指明包名和类名。
 
-```
+```scala
 class AbcUser2 extends Module {
 	val io = IO(new Bundle{})
 	val abc = new mypack.Abc()
 }
 ```
 
-```
+```scala
 import mypack.Abc
 class AbcUser3 exteds Module {
 	val io = IO(new Bundle{})
@@ -106,7 +106,7 @@ Chisel可以使用Scala的很多特性来编写TB，例如，可以**使用软�
 
 需要导入的包有：
 
-```
+```scala
 import chisel3._
 import chisel3.iotesters._
 ```
@@ -119,7 +119,7 @@ import chisel3.iotesters._
 
 #### DUT（被测对象）
 
-```
+```scala
 class DeviceUnderTest extends Module {
 	val io = IO(new Bundle {
 		val a = Input(UInt(2.W))
@@ -135,7 +135,7 @@ class DeviceUnderTest extends Module {
 
 测试对象需要从`PeekPokeTester`中继承，并且以DUT作为参数传入。
 
-```
+```scala
 class TesterSimple(dut: DeviceUnderTest ) extends
     PeekPokeTester(dut) {
     poke(dut.io.a, 0.U)
@@ -153,7 +153,7 @@ class TesterSimple(dut: DeviceUnderTest ) extends
 
 #### 测试对象（object）
 
-```
+```scala
 object TesterSimple extends App {
     chisel3. iotesters .Driver (() => new DeviceUnderTest ()) { c =>
     	new TesterSimple (c)
@@ -163,7 +163,7 @@ object TesterSimple extends App {
 
 也可以使用`expect`断言，让程序自动检查测试是否通过。
 
-```
+```scala
 class Tester(dut: DeviceUnderTest ) extends PeekPokeTester(dut) {
     poke(dut.io.a, 3.U)
     poke(dut.io.b, 1.U)
@@ -194,7 +194,7 @@ sbt test
 
 一个简单的测试程序如下：
 
-```
+```scala
 import org. scalatest ._
 class ExampleSpec extends FlatSpec with Matchers {
     "Integers" should "add" in {
@@ -207,7 +207,7 @@ class ExampleSpec extends FlatSpec with Matchers {
 
 事实上，我们可以将Chisel的测试包裹到Scala中去。
 
-```
+```scala
 class SimpleSpec extends FlatSpec with Matchers {
 	"Tester" should "pass" in {
         chisel3. iotesters .Driver (() => new DeviceUnderTest ()) { c =>
@@ -224,3 +224,37 @@ sbt "testOnly SimpleSpec"
 ```
 
 来运行单个测试。
+
+### 波形图
+
+要生成波形图，应该在进行测试时添加一定的参数。
+
+```scala
+class WaveformSpec extends FlatSpec with Matchers {
+    "Waveform" should "pass" in {
+        Driver.execute(Array("--generate -vcd-output", "on"), () =>
+            new DeviceUnderTest ()) { c =>
+            new WaveformTester (c)
+        } should be (true)
+    }
+}
+```
+
+生成的`vcd`波形图文件可以使用GTKWake或者Modelsim打开。
+
+### printf调试
+
+在Chisel中写printf语句，在时钟的上升沿会触发printf语句。
+
+```scala
+class DeviceUnderTestPrintf extends Module {
+    val io = IO(new Bundle {
+        val a = Input(UInt (2.W))
+        val b = Input(UInt (2.W))
+        val out = Output(UInt (2.W))
+    })
+        io.out := io.a & io.b
+        printf("dut: %d %d %d\n", io.a, io.b, io.out)
+}
+```
+
