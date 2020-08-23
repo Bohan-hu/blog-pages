@@ -18,7 +18,7 @@ catagory:
 
 ### 源文件组织
 
-![image-20200822153952347](https://gitee.com/hubohancs/pic_storage/raw/master/image-20200822153952347.png)
+![image-20200823131332598](https://cdn.jsdelivr.net/gh/Bohan-Hu/img/images/image-20200823131332598.png)
 
 推荐的文件组织方式如上图所示。
 
@@ -88,7 +88,7 @@ sbt "test:runMain mypacket.MyTester"
 
 ### 工具流
 
-![image-20200822155412688](https://gitee.com/hubohancs/pic_storage/raw/master/image-20200822155412688.png)
+![image-20200823131357855](https://cdn.jsdelivr.net/gh/Bohan-Hu/img/images/image-20200823131357855.png)
 
 电路的RTL文件是`Hello.scala`，Scala编译器将这个文件和Chisel库、Scala库一起编译，生成Java类`Hello.class`，使用JVM进行执行，执行后生成RTL的中间表示（FIRRTL）。
 
@@ -224,7 +224,3 @@ sbt "testOnly SimpleSpec"
 ```
 
 来运行单个测试。
-
-测试图片
-
-![1568212684223.png](https://i.loli.net/2020/08/22/RFNM5zOHn2UZe9v.png)

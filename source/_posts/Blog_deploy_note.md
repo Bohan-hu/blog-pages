@@ -76,7 +76,7 @@ deploy:
 
 在本地刚刚建立的Blog文件夹中，新建`.github\workflows\deploy.yml`，用于CI自动部署。
 
-![image-20200821231255781](https://gitee.com/hubohancs/pic_storage/raw/master/image-20200821231255781.png)
+![image-20200823133939523](https://cdn.jsdelivr.net/gh/Bohan-Hu/img/images/image-20200823133939523.png)
 
 ```
 name: CI
@@ -158,23 +158,23 @@ ssh-keygen -t rsa -f
 
 进入Cloudflare，添加刚刚注册的域名，并进入DNS选项卡，添加A记录。
 
-![image-20200821231501157](https://gitee.com/hubohancs/pic_storage/raw/master/image-20200821231501157.png)
+![image-20200823134133941](https://cdn.jsdelivr.net/gh/Bohan-Hu/img/images/image-20200823134133941.png)
 
 设置完毕后，需要一定时间生效，此时，进入SSL/TTS-边缘证书-始终使用HTTPS：
 
-![image-20200821231657579](https://gitee.com/hubohancs/pic_storage/raw/master/image-20200821231657579.png)
+![image-20200823134157565](https://cdn.jsdelivr.net/gh/Bohan-Hu/img/images/image-20200823134157565.png)
 
 ### 设置Godaddy
 
 在Godaddy注册域名后，在域名解析的选项中，设置为Cloudflare的域名服务器。
 
-![image-20200821231225761](https://gitee.com/hubohancs/pic_storage/raw/master/image-20200821231225761.png)
+![image-20200823134210525](https://cdn.jsdelivr.net/gh/Bohan-Hu/img/images/image-20200823134210525.png)
 
 ### 添加CNAME
 
 在博客文件夹的`source`子目录中，新建`CNAME`文件，用大写写入自己绑定到Github的域名。
 
-![image-20200821231809707](https://gitee.com/hubohancs/pic_storage/raw/master/image-20200821231809707.png)
+![image-20200823134225476](https://cdn.jsdelivr.net/gh/Bohan-Hu/img/images/image-20200823134225476.png)
 
 至此，可以通过域名访问自己的博客主页了。
 
@@ -182,22 +182,22 @@ ssh-keygen -t rsa -f
 
 由于Hexo添加图片较为麻烦，建议使用图床，国内使用Gitee作为图床是比较好的选择。
 
-### 安装Picgo
+8.23更新：由于Gitee对于微信浏览器的UA做了限制，所以现在采用Github+JsDelivr的方案。
 
-在Picgo官网下载安装Picgo后，在Gitee中建立一个新的公开仓库，同时需要使用Reame初始化，以新建Master分支。
+### 安装Picgo并建立Github仓库
 
-### 安装插件
-
-![image-20200821232022693](https://gitee.com/hubohancs/pic_storage/raw/master/image-20200821232022693.png)
+在Picgo官网下载安装Picgo后，在Github中建立一个新的公开仓库，同时需要使用Readme初始化，以新建Master分支。
 
 ### 配置插件
 
-![image-20200821232112118](https://gitee.com/hubohancs/pic_storage/raw/master/image-20200821232112118.png)
+注意链接格式，前缀为`https://cdn.jsdelivr.net/gh/用户名/仓库名`
+
+![image-20200823134358958](https://cdn.jsdelivr.net/gh/Bohan-Hu/img/images/image-20200823134358958.png)
 
 ### 配置Typora
 
-![image-20200821232148508](https://gitee.com/hubohancs/pic_storage/raw/master/image-20200821232148508.png)
+![image-20200823134508984](https://cdn.jsdelivr.net/gh/Bohan-Hu/img/images/image-20200823134508984.png)
 
 如果出现Fetch Error，更改监听端口为36677.
 
-![image-20200821232214116](https://gitee.com/hubohancs/pic_storage/raw/master/image-20200821232214116.png)
+![image-20200823134519328](https://cdn.jsdelivr.net/gh/Bohan-Hu/img/images/image-20200823134519328.png)
