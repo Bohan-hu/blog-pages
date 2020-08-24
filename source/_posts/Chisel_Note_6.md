@@ -1,6 +1,6 @@
 ---
 title: Chisel学习笔记（六）：有限状态机
-date: 2020/08/23 17:00:00
+date: 2020/08/23 19:00:00
 tag:
 	- Chisel
 catagory:
