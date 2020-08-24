@@ -34,6 +34,63 @@ class ParamAdder(n: Int) extends Module {
 val add_8 = Module(new ParamAdder(8))
 ```
 
+为了保证鲁棒性，防止硬件和预期不同，一般需要在类的头部加上一个`require`语句，来对参数的合法性进行断言。
+
+```scala
+class ParameterizedWidthAdder(in0Width: Int, in1Width: Int, sumWidth: Int) extends Module {
+  require(in0Width >= 0)
+  require(in1Width >= 0)
+  require(sumWidth >= 0)
+  val io = IO(new Bundle {
+    val in0 = Input(UInt(in0Width.W))
+    val in1 = Input(UInt(in1Width.W))
+    val sum = Output(UInt(sumWidth.W))
+  })
+  // a +& b includes the carry, a + b does not
+  io.sum := io.in0 +& io.in1
+}
+```
+
+### 将硬件的行为参数化
+
+```scala
+class Sort4(ascending: Boolean) extends Module {
+  val io = IO(new Bundle {
+    val in0 = Input(UInt(16.W))
+    val in1 = Input(UInt(16.W))
+    val in2 = Input(UInt(16.W))
+    val in3 = Input(UInt(16.W))
+    val out0 = Output(UInt(16.W))
+    val out1 = Output(UInt(16.W))
+    val out2 = Output(UInt(16.W))
+    val out3 = Output(UInt(16.W))
+  })
+    
+  // this comparison funtion decides < or > based on the module's parameterization
+  def comp(l: UInt, r: UInt): Bool = {
+      if (ascending) {
+        l < r
+      } else {
+        l > r
+    }
+  }
+
+  val row10 = Wire(UInt(16.W))
+  val row11 = Wire(UInt(16.W))
+  val row12 = Wire(UInt(16.W))
+  val row13 = Wire(UInt(16.W))
+
+  when(comp(io.in0, io.in1)) {
+    row10 := io.in0            // preserve first two elements
+    row11 := io.in1
+  }.otherwise {
+    row10 := io.in1            // swap first two elements
+    row11 := io.in0
+  }
+```
+
+在上述例子中，我们看到，硬件的行为被参数化了，`comp(UInt, UInt) => Bool`函数接收的是两个硬件的节点，返回的也是两个硬件的节点。
+
 ### 以类型为参数的函数
 
 类型同样可以作为参数，传递入函数中。
@@ -154,6 +211,52 @@ class NocRouter2[ T <: Data ](dt: T, n: Int) extends Module {
 val router = Module(new NocRouter2(new Port(new Payload), 2))
 ```
 
+### 可选的IO端口
+
+常用于有时可以选择去除某些调试信号。
+
+注意到如果val是None，那么就没有这个信号了。
+
+```scala
+class HalfFullAdder(val hasCarry: Boolean) extends Module {
+  val io = IO(new Bundle {
+    val a = Input(UInt(1.W))
+    val b = Input(UInt(1.W))
+    val carryIn = if (hasCarry) Some(Input(UInt(1.W))) else None
+    val s = Output(UInt(1.W))
+    val carryOut = Output(UInt(1.W))
+  })
+  val sum = io.a +& io.b +& io.carryIn.getOrElse(0.U)
+  io.s := sum(0)
+  io.carryOut := sum(1)
+}
+```
+
+### 可选的参数
+
+可以使用`Option`类型，来定义某个可选的参数，在实例化的时候，如果不提供这个参数，那么这个参数的`isDefined`字段就为`False`。
+
+```scala
+class DelayBy1(resetValue: Option[UInt] = None) extends Module {
+    val io = IO(new Bundle {
+        val in  = Input( UInt(16.W))
+        val out = Output(UInt(16.W))
+    })
+    val reg = if (resetValue.isDefined) { // resetValue = Some(number)
+        RegInit(resetValue.get)
+    } else { //resetValue = None
+        Reg(UInt())
+    }
+    reg := io.in
+    io.out := reg
+}
+
+println(getVerilog(new DelayBy1))
+println(getVerilog(new DelayBy1(Some(3.U))))
+```
+
+
+
 ## 用代码生成组合逻辑
 
 在Chisel中，我们可以通过从Scala的`Array`转为Chisel的`Vec`类型，非常方便地创建组合逻辑表格。我们可以使用存储在文件中的数据，在硬件生成阶段创建一个逻辑表：
@@ -257,5 +360,127 @@ class TickerTester[ T <: Ticker ]( dut: T, n: Int) extends
        	step (1)
         }
 }
+```
+
+## 隐式
+
+Scala引入了隐式的概念，允许编译器引入部分语法糖。
+
+### 隐式参数
+
+有时，我们的代码可能需要访问一些顶层的变量，特别是在比较深的嵌套函数调用中。相比于我们手动将这些变量在每次函数调用中传递，我们可以使用隐式参数。
+
+在Scala中，我们可以隐式或显式地传入参数：
+
+```scala
+object CatDog {
+  implicit val numberOfCats: Int = 3
+  //implicit val numberOfDogs: Int = 5
+
+  def tooManyCats(nDogs: Int)(implicit nCats: Int): Boolean = nCats > nDogs
+    
+  val imp = tooManyCats(2)    // 隐式地传入了参数nCats 
+  val exp = tooManyCats(2)(1) // 显式地传入了参数nCats 
+}
+CatDog.imp
+CatDog.exp
+```
+
+此处，我们首先定义了一个**隐式值**`numberOfCats`。在某个定义域内，隐式值只能有一个值。
+
+然后，我们定义了一个函数，接收两个参数列表，第一个是显式的参数值，第二个是隐式的参数值。
+
+当我们调用`tooManyCats`函数的时候，我们可以隐藏第二个参数列表（让编译器为我们寻找隐式值），或是显式地提供相应的参数（可以和默认的隐式值不同）。
+
+### 隐式转换
+
+类似于隐式参数的，隐式转换常常被用于减少模板代码的数量。更具体地，它们用来**自动将Scala对象转换为其他对象**。
+
+在下面的例子中，我们有两个类，分别为`Animal`和`Human`类，`Animal`有`Species`字段，但是`Human`没有。
+
+当我们在`Human`上面调用`Species`时，编译器会尝试进行隐式转换。
+
+因此，为了完成`Animal`到`Human`之间的转换，我们需要定义一个转换函数。
+
+```scala
+class Animal(val name: String, val species: String)
+class Human(val name: String)
+implicit def human2animal(h: Human): Animal = new Animal(h.name, "Homo sapiens")
+val me = new Human("Adam")
+println(me.species)
+```
+
+## 例子：Mealy机生成器
+
+```scala
+// Mealy machine has
+case class BinaryMealyParams(
+  // number of states
+  nStates: Int,
+  // initial state
+  s0: Int,
+  // function describing state transition
+  stateTransition: (Int, Boolean) => Int,
+  // function describing output
+  output: (Int, Boolean) => Int
+) {
+  require(nStates >= 0)
+  require(s0 < nStates && s0 >= 0)
+}
+
+class BinaryMealy(val mp: BinaryMealyParams) extends Module {
+  val io = IO(new Bundle {
+    val in = Input(Bool())
+    val out = Output(UInt())
+  })
+
+  val state = RegInit(UInt(), mp.s0.U)
+
+  // output zero if no states
+  io.out := 0.U
+  for (i <- 0 until mp.nStates) {
+    when (state === i.U) {
+      when (io.in) {
+        state  := mp.stateTransition(i, true).U
+        io.out := mp.output(i, true).U
+      }.otherwise {
+        state  := mp.stateTransition(i, false).U
+        io.out := mp.output(i, false).U
+      }
+    }
+  }
+}
+```
+
+上述的代码是一个Mealy状态机的生成逻辑。首先，声明了一个`case class`，在里面包装了所有构建Mealy机所需的参数，包括状态的数量、初态、状态转移函数和输出函数，并且使用了两个`require`语句做断言，保证状态的合法性。
+
+`BinaryMealy`是状态机的硬件模块，其构造器接收参数`mp`，这个参数用以构建状态机。
+
+![image-20200824210948423](https://cdn.jsdelivr.net/gh/Bohan-Hu/img/images/image-20200824210948423.png)
+
+下面构造这个状态机的参数：
+
+```scala
+val nStates = 3
+val s0 = 2
+// 将上述函数翻译成状态转移函数
+def stateTransition(state: Int, in: Boolean): Int = {
+	if(in) {
+		1
+	} else {
+		0
+	}
+}
+// 状态机输出函数
+def output(state:Int, in: Boolean): Int = {
+	if (state == 2) {
+		0
+	} else if ((state == 1 && !in) || (state == 0 && in)) {
+		1
+	} else {
+		0
+	}
+}
+val testParams = BinaryMealyParams(nStates, s0, stateTransition, output)
 ```
 
