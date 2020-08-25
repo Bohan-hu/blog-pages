@@ -4,8 +4,7 @@ date: 2020/08/23 19:00:00
 tag:
 	- Chisel
 catagory:
-	- Chisel
-	- 笔记
+	- Chisel学习
 ---
 
 ## Moore机编码风格
