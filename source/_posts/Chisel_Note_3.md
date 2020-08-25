@@ -4,8 +4,7 @@ date: 2020/08/22 15:00:00
 tag:
 	- Chisel
 catagory:
-	- Chisel
-	- 笔记
+	- Chisel学习
 ---
 
 本节主要记录如何编译Chisel代码，生成Verilog和测试我们的Chisel设计。由于Chisel使用Scala实现，构建Scala的常用工具是`sbt`。在编译和测试的过程中，`sbt`下载对应版本的Scala和Chisel库。
