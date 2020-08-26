@@ -361,6 +361,102 @@ class TickerTester[ T <: Ticker ]( dut: T, n: Int) extends
 }
 ```
 
+## 模式匹配机制
+
+Scala的模式匹配机制在Chisel中非常常见，Scala提供了强大的模式匹配机制，包括：
+
+- 类似于C语言的`switch`语句的匹配功能
+- 对于不同值的任意组合进行匹配
+- 对于变量的类型进行匹配，这一点非常好用，例如：
+  - 用于迭代的值来自于列表，而列表中对象的类型不尽相同
+  - 变量是某个超类的成员，但并不知道其子类是什么
+- 通过正则表达式匹配字符串的子串
+
+### 值匹配
+
+```scala
+// y is an integer variable defined somewhere else in the code
+val y = 7
+/// ...
+val x = y match {
+  case 0 => "zero" // 可以写在同一行里
+  case 1 =>        // 可以不写在同一行里
+      "one"        // 在下一个case之前都是这个case的代码
+  case 2 => {      // 可以添加大括号，但通常不是必要的
+      "two"
+  }
+  case _ => "many" // _可以匹配所有的值
+}
+println("y is " + x)
+```
+
+- 模式匹配是按照从上到下的顺序的，一旦发生成功匹配，就不会进行接下来的搜索
+- 通配符`_`的作用是匹配其他值，用于处理没有匹配上的情况
+
+### 多值匹配
+
+```scala
+def animalType(biggerThanBreadBox: Boolean, meanAsCanBe: Boolean): String = {
+  (biggerThanBreadBox, meanAsCanBe) match {
+    case (true, true) => "wolverine"
+    case (true, false) => "elephant"
+    case (false, true) => "shrew"
+    case (false, false) => "puppy"
+  }
+}
+println(animalType(true, true))
+```
+
+多值匹配的语法如上所示。
+
+### 类型匹配
+
+```scala
+val sequence = Seq("a", 1, 0.0)
+sequence.foreach { x =>
+  x match {
+    case s: String => println(s"$x is a String")
+    case s: Int    => println(s"$x is an Int")
+    case s: Double => println(s"$x is a Double")
+    case _ => println(s"$x is an unknown type!")
+  }
+}
+```
+
+Scala是强类型语言，类型匹配是一种强大的机制。
+
+如果想匹配多种类型，可以这样写，注意此时需要使用通配符`_`。
+
+```scala
+val sequence = Seq("a", 1, 0.0)
+sequence.foreach { x =>
+  x match {
+    case _: Int | _: Double => println(s"$x is a number!")
+    case _ => println(s"$x is an unknown type!")
+  }
+}
+```
+
+### 使用实例
+
+```scala
+class DelayBy1(resetValue: Option[UInt] = None) extends Module {
+  val io = IO(new Bundle {
+    val in  = Input( UInt(16.W))
+    val out = Output(UInt(16.W))
+  })
+  val reg = resetValue match {
+    case Some(r) => RegInit(r)
+    case None    => Reg(UInt())
+  }
+  reg := io.in
+  io.out := reg
+}
+```
+
+使用模式匹配去匹配类型。
+
+
 ## 隐式
 
 Scala引入了隐式的概念，允许编译器引入部分语法糖。
@@ -488,4 +584,5 @@ def output(state:Int, in: Boolean): Int = {
 }
 val testParams = BinaryMealyParams(nStates, s0, stateTransition, output)
 ```
+
 
