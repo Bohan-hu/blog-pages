@@ -1,9 +1,11 @@
-## Nutshell仿真流程解析
-
-- 生成Verilog
-- 自己编写的main函数，调用Verilator生成的仿真模型，并动态链接已经编译好的二进制版本的NEMU
-
-
+---
+title: Nutshell仿真机制解析
+date: 2020/08/31 00:00:00
+tag:
+	- 测试
+catagory:
+	- 测试
+---
 
 ### 观察生成的Verilog顶层模型
 
@@ -17,7 +19,7 @@
 import "DPI-C" function void uart_getc(output byte ch);
 ```
 
-为什么要这样写呢？因为仿真时可能会用到串口输入，而我们的控制台明显无法仿真串口，正如yzh老师所说，需要用C语言编写一个“假”的串口来进行。
+为什么要这样写呢？因为仿真时可能会用到串口输入，而我们的控制台明显无法仿真串口，需要用C语言编写一个“假”的串口来进行仿真，而这个“串口”可以读取用户的键盘输入，并且将DUT的输出显示在控制台上。
 
 关于DPI-C的接口使用，稍后会进行介绍。
 
@@ -60,7 +62,7 @@ module NutShellSimTop(
 
 
 
-### `main.c` - 梦开始的地方
+### `main.c` - 开始的地方
 
 ```c++
 int main(int argc, const char** argv) {
@@ -84,7 +86,7 @@ int main(int argc, const char** argv) {
 }
 ```
 
-我们看到，主循环中，构造了一个模拟器`Emulator`，并且根据Verilator的要求，需要自行构造一个`get_cycle`的函数。
+我们看到，主循环中，构造了一个模拟器`Emulator`，并且根据Verilator的要求，需要自行构造一个`get_cycle`的函数，以供Verilog中的`$time`任务调用。
 
 那么需要熟悉的就是`Emulator`和里面的`execute`函数了。
 
@@ -208,7 +210,7 @@ enum {
     }
 ```
 
-#### `single_cycle()` - 前进一个时钟周期
+#### `single_cycle()` - 前进一个时钟周期（单步）
 
 ```cpp
     dut_ptr->clock = 0;
@@ -224,9 +226,11 @@ enum {
     cycles ++;
 ```
 
-此处使用了Verilator中提到的`eval()`，当设置了时钟下降沿之后，调用`eval()`计算组合逻辑，设置了上升沿之后，调用`eval()`更新时序逻辑。
+- 此处使用了Verilator手册中提到的`eval()`。
 
-这里维护的`cycles`变量是为了给Verilog的`$time`任务使用，Verilator规定这个需要由用户维护。
+- 当设置了时钟下降沿之后，调用`eval()`计算组合逻辑，设置了上升沿之后，调用`eval()`更新时序逻辑。
+
+- 这里维护的`cycles`变量是为了给Verilog的`$time`任务使用，Verilator规定这个需要由用户维护。
 
 #### `execute_cycles` - 最核心的部分
 
@@ -264,6 +268,7 @@ enum {
       }
 
       if (!hascommit && (uint32_t)dut_ptr->io_difftest_thisPC == 0x80000000) {			// 开始执行，初始PC=80000000
+        // 
         hascommit = 1;
         extern void init_difftest(rtlreg_t *reg);
         rtlreg_t reg[DIFFTEST_NR_REG];
@@ -278,7 +283,8 @@ enum {
         read_emu_regs(reg);
 
         extern int difftest_step(rtlreg_t *reg_scala, uint32_t this_inst,
-          int isMMIO, int isRVC, int isRVC2, uint64_t intrNO, int priviledgeMode, int isMultiCommit);		// 这里有一个参数，如果是双提交的话，需要检测两次
+          int isMMIO, int isRVC, int isRVC2, uint64_t intrNO, int priviledgeMode, int isMultiCommit);		
+          // 这里有一个参数，如果是双提交的话，需要检测两次
         if (dut_ptr->io_difftestCtrl_enable) {
           if (difftest_step(reg, dut_ptr->io_difftest_thisINST,				// <----------- PAY ATTENTION TO THIS FUNCTION !!!
               dut_ptr->io_difftest_isMMIO, dut_ptr->io_difftest_isRVC, dut_ptr->io_difftest_isRVC2,
@@ -305,6 +311,8 @@ enum {
 - `difftest_step()`
 - `poll_event()`
 
+- 在开始仿真的时候，其实NEMU的状态是不确定的，需要在Reset之后，**用我们编写的CPU的初始状态去校准NEMU的初始状态，他们一致之后，才会开始真正的仿真。**
+
 #### `difftest_step()` - 灵魂
 
 ```cpp
@@ -325,7 +333,12 @@ int difftest_step(rtlreg_t *reg_scala, uint32_t this_inst,
   rtlreg_t this_pc = reg_scala[DIFFTEST_THIS_PC];
   // ref_difftest_getregs() will get the next pc,
   // therefore we must keep track this one
+  // 需要注意的是：NEMU的PC是NEMU将要执行的下一条指令的PC
+  // ref_difftest_getregs() 拿到的PC是NEMU计算出的下一个PC
+  // 为了避免对比出错，我们需要用当前CPU执行的PC去覆盖读出的PC
+  // 为了避免丢失原有的PC，我们需要将NEMU拿出来的下一个PC进行保存，保存到nemu_this_pc中
   static rtlreg_t nemu_this_pc = 0x80000000;
+  // 这个循环队列，是用于记录之前的轨迹用的
   static rtlreg_t pc_retire_queue[DEBUG_RETIRE_TRACE_SIZE] = {0};
   static uint32_t inst_retire_queue[DEBUG_RETIRE_TRACE_SIZE] = {0};
   static uint32_t multi_commit_queue[DEBUG_RETIRE_TRACE_SIZE] = {0};
@@ -335,37 +348,46 @@ int difftest_step(rtlreg_t *reg_scala, uint32_t this_inst,
   #ifdef NO_DIFFTEST
   return 0;
   #endif
-
+  // Copy PC是什么机制？
+  // 这个代码块的作用，猜测是仅在双提交+MMIO的情况下有用
+  // 通过在代码中添加assert断言，确定其确实是在双提交的时候才有用
+  // 在双提交，且为MMIO+跳转的模式下，下一个PC不应当是PC+8，而应当是跳转的目标
+  // 我们假设DUT计算的跳转的目标永远是正确的，直接将其拷贝给NEMU
   if (need_copy_pc) {
     need_copy_pc = 0;
-    ref_difftest_getregs(&ref_r); 							// 将参考实现中的寄存器们存进来
-    nemu_this_pc = reg_scala[DIFFTEST_THIS_PC]; 			// 然后将原来的PC保存
-    ref_r[DIFFTEST_THIS_PC] = reg_scala[DIFFTEST_THIS_PC];	// 然后把我们实现中的pc复制过去
-    ref_difftest_setregs(ref_r);							// 最后把相应reference的状态更改
+    ref_difftest_getregs(&ref_r);
+    nemu_this_pc = reg_scala[DIFFTEST_THIS_PC];
+    ref_r[DIFFTEST_THIS_PC] = reg_scala[DIFFTEST_THIS_PC];
+    ref_difftest_setregs(ref_r);
   }
-
-  if (isMMIO) {
+  if (isMMIO) {				
+    // 对于MMIO，直接不对比，NEMU中的MMIO关系我们暂时无法干涉，所以直接跳过去，并且将执行完毕MMIO指令的CPU状态，拷贝到NEMU里面
     // printf("diff pc: %x isRVC %x\n", this_pc, isRVC);
     // MMIO accessing should not be a branch or jump, just +2/+4 to get the next pc
     int pc_skip = 0;
+    // 我们为什么很肯定地能认为NEMU的下一个PC是PC+4呢？
+    // 在单提交的情况下，MMIO相关的不可能是跳转指令，所以PC+4一定是下一个PC
+    // 所以直接将当前DUT的状态复制给NEMU，并且将NEMU的PC+4
+    // 双提交的情况下，一定会是PC+8吗？这里需要多加考虑。
     pc_skip += isRVC ? 2 : 4;
     pc_skip += isMultiCommit ? (isRVC2 ? 2 : 4) : 0;
     reg_scala[DIFFTEST_THIS_PC] += pc_skip;
     nemu_this_pc += pc_skip;
     // to skip the checking of an instruction, just copy the reg state to reference design
-    // 如果需要跳过某个指令的检查，那么直接将寄存器的状态复制到reference里面去就可以了
-    ref_difftest_setregs(reg_scala);
+    ref_difftest_setregs(reg_scala);        // 把状态拷贝到里面去
+    // 设置相关的队列
     pc_retire_pointer = (pc_retire_pointer+1) % DEBUG_RETIRE_TRACE_SIZE;
     pc_retire_queue[pc_retire_pointer] = this_pc;
     inst_retire_queue[pc_retire_pointer] = this_inst;
     multi_commit_queue[pc_retire_pointer] = isMultiCommit;
     skip_queue[pc_retire_pointer] = isMMIO;
+    // 标记下一次需要覆盖PC（仅针对MMIO+跳转的双提交情形）
     need_copy_pc = 1;
-    return 0;
+    return 0;																														// NEMU并不执行，直接return
   }
 
 
-  if (intrNO) {
+  if (intrNO) {																// 如果产生了中断或者异常，则NEMU也需要获知相关的信息
     ref_difftest_raise_intr(intrNO);
   } else {
     ref_difftest_exec(1);
@@ -373,7 +395,7 @@ int difftest_step(rtlreg_t *reg_scala, uint32_t this_inst,
 
   if (isMultiCommit) {    
     ref_difftest_exec(1);
-    // exec 1 more cycle
+    // 如果是多提交，需要再运行一步
   }
 
   ref_difftest_getregs(&ref_r);
@@ -398,13 +420,15 @@ int difftest_step(rtlreg_t *reg_scala, uint32_t this_inst,
   }
 
   // replace with "this pc" for checking
+  // 同步NEMU的PC
   ref_r[DIFFTEST_THIS_PC] = nemu_this_pc;
+  // 保存下一个PC
   nemu_this_pc = next_pc;
 
   ref_r[0] = 0;
 	
     
-  // 检查上面获得的结果
+  // 检查上面获得的结果，如果有误，打印出最近DEBUG_RETIRE_TRACE_SIZE条
   if (memcmp(reg_scala, ref_r, sizeof(ref_r)) != 0) {
     printf("\n==============Retire Trace==============\n");
     int j;
@@ -435,11 +459,126 @@ int difftest_step(rtlreg_t *reg_scala, uint32_t this_inst,
 
 ```
 
-- 这个函数，最重要的是需要理解**上面PC跳过的逻辑（TBC）**。
-- 理解几个API的实现，那么还是需要去参考NEMU的手册（TODO）。
+**需要注意的有以下几个逻辑：**
+
+- NEMU中的PC寄存器，指向的是**下一个**将要执行的指令的PC
+- 进入`difftest_step()`函数时，NEMU的状态比DUT的状态**滞后**一条指令，但是**NEMU的PC和DUT是相同的**
+- 在NEMU单步执行一个周期之后，NEMU的通用寄存器和控制寄存器应当和DUT相同，但是NEMU的PC较DUT超前了一条指令。
+
+---
+
+- 最重要的是需要理解**PC跳过的逻辑**，具体内容在代码中有详尽的注释。
+- 对比一般流程如下：
+  - CPU提交一条指令
+  - 调用`difftest_step()`
+  - 保存NEMU的PC(nemu_this_pc)
+  - NEMU单步执行
+  - 对比
+- 如果是有需要跳过的指令
+  - CPU提交一条指令
+  - 调用`difftest_step()`
+  - 拷贝CPU的状态给NEMU
+  - 更新NEMU的PC
+  - 返回
+
+##### `need_copy_pc`到底有啥用？
+
+笔者在阅读源代码时，一直不理解这个`need_copy_pc`标志有什么用。
+
+`need_copy_pc`标志仅在`MMIO`这个分支内会被设置。
+
+某天突然想到，之前实现的乱序处理器中，MMIO和跳转指令可能会同时提交，如果跳转指令发生了跳转，那么接下来，不可能会在PC+8的地方继续取指。那么在这种情况下，在`MMIO`这个分支中为NEMU设置的PC就不对了！
+
+因为CPU在提交完MMIO和跳转指令这两条指令之后，接下来的PC不再是PC+8，而是会跳到目标地址，此时，`need_copy_pc`就派上用场了。根据作者的注释，在这种情况下，认为CPU计算的目标地址是正确的。
+
+> 笔者认为，此处的对比似乎不是那么严谨，如果需要跳过指令，并且双提交的情况，一个改进的措施是去除`need_copy_pc`这个标志，转而在CPU暴露的接口中指明跳转指令所在的PC，进而让NEMU也去执行对应的跳转指令，这样能够将测试覆盖的更加全面。
+>
+> 并且如果DUT为顺序标量处理器，是否可以使用宏来关闭这个`need_copy_pc`机制？因为在顺序标量的核中，这个选项确实是多余的，但是每次碰到MMIO，都会去执行这个分支，会不会造成效率的下降？
+
+###### 猜测与验证
+
+猜测：MMIO和跳转双提交的时候，会进入到这个条件之中，因为NEMU的PC需要校正。
+
+为了验证自己的想法，笔者在关键部分添加了断言：
+
+![](https://cdn.jsdelivr.net/gh/Bohan-Hu/img/images/image-20200901004921682.png)
+
+- 通过在此处添加断言，发现`need_copy_pc`这个条件似乎是多余的，那么事实是这样吗？
+- 虽然每一次进入这个分支的时候，都复制了PC给NEMU，但是这个复制似乎是“多余”的，因为每次`assert`中的条件都成立。
+
+- 在后面添加断言语句，断言是否有双提交，发现确实没有双提交
+
+![](https://cdn.jsdelivr.net/gh/Bohan-Hu/img/images/image-20200901004321667.png)
+
+---
+
+进一步地，修改Nutshell的配置，配置为顺序双发射和乱序多发射。
+
+- 在顺序双发射的核中，也不存在MMIO与跳转指令同时提交的情况，唯有在乱序核中会有这种情况，所以当将参数调到如下情形时，断言才有不成立的可能。
+
+![](https://cdn.jsdelivr.net/gh/Bohan-Hu/img/images/image-20200901010424899.png)
+
+
+![image-20200901010449629](https://cdn.jsdelivr.net/gh/Bohan-Hu/img/images/image-20200901010449629.png)
+
+---
+
+**结论：`need_copy_pc`仅在双提交，并且双提交为跳转指令+MMIO时才起作用。**
 
 
 
-### `device.cpp, ram.cpp, sdcard.cpp, uart.cpp, vga.cpp等` - 使用C++编写的外设仿真模型
+### `device.cpp, ram.cpp, sdcard.cpp, uart.cpp, vga.cpp等` - DPI-C接口
 
-TBC
+Nutshell的仿真事实上也接近于**全系统仿真**，也就是说不仅仅仿真CPU核心，还需要同步仿真SoC上面的外设，例如内存、I/O设备。因此，Nutshell的源代码中提供了相应的C++编写的仿真模型。
+
+一个很好的例子是串口模型。使用Verilog编写串口仿真模型，往往会比较困难，并且在命令行下难以与用户进行交互。而Verilog提供了DPI-C接口，可以在Verilog中调用编写好的C语言函数。
+
+在`src/main/scala/device`中，是Nutshell提供的AXI外设模型，我们以串口模型为例：
+
+```scala
+class UARTGetc extends BlackBox with HasBlackBoxInline {
+  val io = IO(new Bundle {
+    val clk = Input(Clock())
+    val getc = Input(Bool())
+    val ch = Output(UInt(8.W))
+  })
+
+  setInline("UARTGetc.v",
+    s"""
+      |import "DPI-C" function void uart_getc(output byte ch);
+      |
+      |module UARTGetc (
+      |  input clk,
+      |  input getc,
+      |  output reg [7:0] ch
+      |);
+      |
+      |  always@(posedge clk) begin
+      |    if (getc) uart_getc(ch);
+      |  end
+      |
+      |endmodule
+     """.stripMargin)
+}
+```
+
+可以看到的是，在这个`UARTGetc`模块中，关联了外部的`uart_getc`函数，这个函数在控制台中能够接收用户输入，将输入存放在缓冲区中，当调用`uart_getc`函数的时候，能够返回缓冲区首部的字符，这里在Verilog中调用了C语言函数，能够直接将返回的字符传送给上层的硬件模块进行仿真。
+
+```scala
+class AXI4UART extends AXI4SlaveModule(new AXI4Lite) {
+  val rxfifo = RegInit(0.U(32.W))
+  val txfifo = Reg(UInt(32.W))
+  val stat = RegInit(1.U(32.W))
+  val ctrl = RegInit(0.U(32.W))
+
+  val getcHelper = Module(new UARTGetc)
+  getcHelper.io.clk := clock
+  getcHelper.io.getc := (raddr(3,0) === 0.U && ren)
+
+  def putc(c: UInt): UInt = { printf("%c", c(7,0)); c }
+  def getc = getcHelper.io.ch
+```
+
+那么串口输出就比较简单了，直接调用`scala`的输出函数就可以实现。
+
+有关于DPI-C以及相关仿真模型的细节，由于时间所限，此处不一一描述。
